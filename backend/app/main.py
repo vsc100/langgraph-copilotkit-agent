@@ -31,7 +31,18 @@ app.add_middleware(
 )
 
 # Initialize agent
-agent = LangGraphAgent()
+# Determine provider from environment
+PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
+MODEL = os.getenv("MODEL_NAME", None)
+
+if PROVIDER not in ["openai", "openrouter", "anthropic"]:
+    logger.warning("Unknown provider {}, defaulting to openai".format(PROVIDER))
+    PROVIDER = "openai"
+
+logger.info("Initializing agent with provider: {}, model: {}".format(
+    PROVIDER, MODEL or "default"
+))
+agent = LangGraphAgent(provider=PROVIDER, model_name=MODEL)
 
 # Request/Response models
 class Message(BaseModel):

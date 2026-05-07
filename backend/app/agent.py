@@ -1,6 +1,7 @@
 from typing import TypedDict, List, Dict, Any, Optional
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -18,17 +19,55 @@ class AgentState(TypedDict):
     response: Optional[str]
 
 class LangGraphAgent:
-    """A LangGraph-powered AI agent with multi-step reasoning."""
+    """A LangGraph-powered AI agent with multi-step reasoning.
     
-    def __init__(self):
-        self.llm = ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0.7,
-            api_key=os.getenv("OPENAI_API_KEY")
-        )
+    Supports multiple LLM providers:
+    - OpenAI (default)
+    - OpenRouter (with any model)
+    - Anthropic (Claude)
+    """
+    
+    def __init__(self, provider="openai", model_name=None):
+        """
+        Initialize the agent with a specific provider and model.
+        
+        Args:
+            provider: "openai", "openrouter", or "anthropic"
+            model_name: Model identifier (e.g., "gpt-4o-mini", "anthropic/claude-3.5-sonnet")
+        """
+        self.provider = provider
+        
+        if provider == "openai":
+            self.llm = ChatOpenAI(
+                model=model_name or "gpt-4o-mini",
+                temperature=0.7,
+                api_key=os.getenv("OPENAI_API_KEY")
+            )
+        elif provider == "openrouter":
+            # OpenRouter uses the OpenAI-compatible API format
+            # Models are specified as "provider/model-name"
+            self.llm = ChatOpenAI(
+                model=model_name or "meta-llama/llama-3.1-8b-instruct",
+                temperature=0.7,
+                openai_api_key=os.getenv("OPENROUTER_API_KEY"),
+                openai_api_base="https://openrouter.ai/api/v1",
+                default_headers={
+                    "HTTP-Referer": "https://github.com/vsc100/langgraph-copilotkit-agent",
+                    "X-Title": "LangGraph CopilotKit Agent"
+                }
+            )
+        elif provider == "anthropic":
+            self.llm = ChatAnthropic(
+                model=model_name or "claude-3.5-sonnet-20241022",
+                temperature=0.7,
+                api_key=os.getenv("ANTHROPIC_API_KEY")
+            )
+        else:
+            raise ValueError(f"Unsupported provider: {provider}. Use 'openai', 'openrouter', or 'anthropic'.")
+        
         self.graph = self._build_graph()
         self.thread_id = "default"
-    
+        print(f"✅ Agent initialized with {provider}: {self.llm.model_name}")
     def analyze_input(self, state: AgentState) -> Dict[str, Any]:
         """Analyze user input and extract intent."""
         messages = state["messages"]
@@ -87,7 +126,6 @@ class LangGraphAgent:
         chain = prompt | self.llm | StrOutputParser()
         
         try:
-            last_message = messages[-1] if messages else {"content": ""}
             analysis = context.get("analysis", "No analysis available")
             
             plan = chain.invoke({
@@ -129,7 +167,6 @@ class LangGraphAgent:
         chain = prompt | self.llm | StrOutputParser()
         
         try:
-            last_message = messages[-1] if messages else {"content": ""}
             plan = context.get("plan", "No plan available")
             
             response = chain.invoke({
